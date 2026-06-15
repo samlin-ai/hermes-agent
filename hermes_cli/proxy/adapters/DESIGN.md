@@ -6,10 +6,12 @@ The goal of the `hermes_cli/proxy/adapters` directory is to define and implement
 By decoupling vendor-specific OAuth token rotation, credential verification, and error-handling (like rate limiting cooldowns or quarantining invalid tokens) from the core HTTP proxy server, this package allows any external application to query localhost and seamlessly authenticate with remote API endpoints without managing API keys directly.
 
 ## File Enumeration
-* [__init__.py](file:///home/castincar/hermes-agent/hermes_cli/proxy/adapters/__init__.py): Exposes the adapter registry dictionary `ADAPTERS` mapping CLI-compatible strings (like `"nous"` and `"xai"`) to their respective class types, and provides the `get_adapter(name: str) -> UpstreamAdapter` helper function to dynamically instantiate registered adapters.
-* [base.py](file:///home/castincar/hermes-agent/hermes_cli/proxy/adapters/base.py): Defines the abstract `UpstreamAdapter` base class and the `UpstreamCredential` frozen dataclass. `UpstreamCredential` represents a resolved bearer token, auth scheme (default: `Bearer`), expiration timestamp, and upstream URL. `UpstreamAdapter` defines the required interface for resolving active credentials, verifying authentication status, registering allowed HTTP paths, and handling retry/failover strategies.
-* [nous_portal.py](file:///home/castincar/hermes-agent/hermes_cli/proxy/adapters/nous_portal.py): Implements `NousPortalAdapter` for proxying requests to the Nous Portal inference API. Handles token reading and dynamic token refreshes by invoking `resolve_nous_runtime_credentials`. Quarantines invalid credentials back into `~/.hermes/auth.json` when terminal authentication errors are encountered.
-* [xai.py](file:///home/castincar/hermes-agent/hermes_cli/proxy/adapters/xai.py): Implements `XAIGrokAdapter` for proxying requests to the xAI Grok API. Leverages a multi-credential `CredentialPool` loaded via `load_pool("xai-oauth")` to rotate keys automatically when a client receives `429` (Rate Limited) or `401` (Unauthorized) status codes from the upstream.
+* [__init__.py](./__init__.py): Adapter registry. `ADAPTERS` dict maps the `--provider` CLI string (`"nous"`, `"xai"`) to its adapter class. `get_adapter(name)` instantiates one by name (case-insensitive, trimmed); raises `ValueError` listing available names if unknown.
+* [base.py](./base.py): Defines the `UpstreamCredential` frozen dataclass and the abstract `UpstreamAdapter` base class.
+  * `UpstreamCredential` fields: `bearer` (token only, no `Bearer` prefix), `base_url`, `token_type` (default `"Bearer"`), `expires_at` (optional ISO-8601, informational).
+  * `UpstreamAdapter` abstract members: `name`, `display_name`, `allowed_paths`, `is_authenticated()` (cheap, no network), `get_credential()` (refresh/rotate + persist; raises `RuntimeError` on failure → proxy returns 401). Concrete defaults: `get_retry_credential(...)` returns `None` (no retry) and `describe()` returns a one-line `proxy status` summary.
+* [nous_portal.py](./nous_portal.py): `NousPortalAdapter` for the Nous Portal inference API. `get_credential` calls `resolve_nous_runtime_credentials` (cross-process refresh/persist) under a per-instance lock, then validates the base URL via `_validate_nous_inference_url_from_network` (falls back to `DEFAULT_NOUS_INFERENCE_URL`). On terminal refresh errors it quarantines the OAuth state and pool entries in `~/.hermes/auth.json`. `get_retry_credential` only acts on `401`, force-refreshing the inference JWT once. Allowed paths: `/chat/completions`, `/completions`, `/embeddings`, `/models`.
+* [xai.py](./xai.py): `XAIGrokAdapter` for xAI Grok via the OAuth `CredentialPool` (`load_pool("xai-oauth")`). `get_credential` selects an available pooled credential under a lock and caches the pool. `get_retry_credential` acts on `401`/`429`: on `429` it marks the key exhausted (1-hour cooldown) and rotates; on `401` it tries refreshing the current key, else rotates. Returns `None` if no other key (error flows back to client) or if the rotated key matches the failed one. Allowed paths add `/responses` (xAI codex_responses mode) to the Nous set.
 
 ## Workflow
 The diagram below details the sequence of operations when a local OpenAI-compatible client issues a request through the proxy server.
@@ -91,8 +93,9 @@ This ASCII block diagram shows how files in the `adapters` directory relate to t
                             | Calls resolver               | Selects / rotates
                             v                              v
                   +--------------------+         +--------------------+
-                  |    cli/auth.py     |         |  credential_pool   |
-                  |  (Nous resolution) |         |  (Grok Oauth Pool) |
+                  |   hermes_cli.auth  |         |agent.credential_pool|
+                  | resolve_nous_      |         |  load_pool(         |
+                  |  runtime_creds()   |         |   "xai-oauth")      |
                   +---------+----------+         +---------+----------+
                             |                              |
                    Persists |                              | Persists

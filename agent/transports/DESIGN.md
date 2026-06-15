@@ -1,22 +1,24 @@
 # agent/transports Design Documentation
 
 ## Goal
-The `agent/transports` directory provides a modular transport and adapter layer that abstracts provider-specific API formats, validation schemas, and protocol quirks. By converting messages/tools to provider-native structures and normalizing raw responses into a standard format, it acts as a translation layer. This ensures that the core agent loop (`AIAgent`) remains provider-agnostic and maintains prompt caching, unified token accounting, and consistent retry/interrupt interfaces across multiple LLM backends (Anthropic, Bedrock, OpenAI-compatible, and Codex/Responses).
+The `agent/transports` directory is a modular transport/adapter layer that abstracts provider-specific API formats, validation rules, and protocol quirks. Each transport converts OpenAI-shaped messages/tools into a provider-native request and normalizes the raw response back into one shared `NormalizedResponse` type. This keeps the core agent loop (`AIAgent` in `run_agent.py`) provider-agnostic while preserving prompt caching, unified token accounting, and consistent retry/interrupt interfaces across multiple LLM backends (Anthropic, Bedrock, OpenAI-compatible Chat Completions, and the OpenAI Responses/Codex API).
 
-In addition to API translation, this directory hosts the Codex App-Server runtime adapter, providing stdio JSON-RPC process lifecycle control, approval prompt bridging, event projection, and a Model Context Protocol (MCP) server that exposes Hermes' core capabilities back to Codex.
+A transport owns the **data path only** (`convert_messages → convert_tools → build_kwargs → normalize_response`). Client construction, streaming, credential refresh, prompt caching, interrupt handling, and retry logic stay on `AIAgent`. Most transports delegate the heavy lifting to sibling adapter modules outside this directory (`agent/anthropic_adapter.py`, `agent/bedrock_adapter.py`, `agent/codex_responses_adapter.py`).
+
+This directory also hosts the **Codex app-server runtime** — an optional opt-in path (gated by `model.openai_runtime == "codex_app_server"`) where the `codex` CLI owns the agent loop in a subprocess. These modules manage the stdio JSON-RPC lifecycle, bridge approval prompts, project Codex events back into Hermes' message shape, and expose Hermes' own tools to Codex via an MCP server.
 
 ## File Enumeration
-* [__init__.py](file:///home/castincar/hermes-agent/agent/transports/__init__.py): Implements the dynamic discovery registry for provider transports. Exposes the primary entry point `get_transport(api_mode)` to load transport modules on-demand.
-* [base.py](file:///home/castincar/hermes-agent/agent/transports/base.py): Defines the `ProviderTransport` abstract base class which dictates the required API signature (`convert_messages`, `convert_tools`, `build_kwargs`, `normalize_response`, and `validate_response`) for all adapter implementations.
-* [types.py](file:///home/castincar/hermes-agent/agent/transports/types.py): Defines the unified dataclasses used across all transports: `NormalizedResponse`, `ToolCall`, and `Usage`, along with backward-compatibility properties (e.g. mapping `codex` and `gemini` metadata via `provider_data`).
-* [anthropic.py](file:///home/castincar/hermes-agent/agent/transports/anthropic.py): Implements `AnthropicTransport` for the `anthropic_messages` api_mode. Converts messages/tools to Claude's format, manages token usage and cache stats, and handles Claude-specific features like signed reasoning/thinking blocks.
-* [bedrock.py](file:///home/castincar/hermes-agent/agent/transports/bedrock.py): Implements `BedrockTransport` for the `bedrock_converse` api_mode. Converts OpenAI-like schemas to Bedrock Converse API parameters and handles AWS boto3 response structures.
-* [chat_completions.py](file:///home/castincar/hermes-agent/agent/transports/chat_completions.py): Implements `ChatCompletionsTransport` for the default `chat_completions` api_mode. Handles OpenAI-compatible endpoints (Nous, OpenRouter, DeepSeek, etc.) and resolves reasoning efforts, structured safety refusals, and provider-specific body parameter adjustments.
-* [codex.py](file:///home/castincar/hermes-agent/agent/transports/codex.py): Implements `ResponsesApiTransport` for `codex_responses`. Adapts standard conversation flow to the OpenAI Responses API schema (Grok/xAI, chatgpt.com backend), managing cross-turn encrypted reasoning state and caching keys.
-* [codex_app_server.py](file:///home/castincar/hermes-agent/agent/transports/codex_app_server.py): Implements `CodexAppServerClient`, a synchronous JSON-RPC 2.0 stdio client wrapper that manages the lifecycle of the spawned `codex app-server` subprocess.
-* [codex_app_server_session.py](file:///home/castincar/hermes-agent/agent/transports/codex_app_server_session.py): Manages the high-level session, turn execution (`CodexAppServerSession`), interrupt signals, and approval decisions (like execution and file change patch requests) for the local Codex subprocess.
-* [codex_event_projector.py](file:///home/castincar/hermes-agent/agent/transports/codex_event_projector.py): Translates and projects `item/*` events emitted by the Codex app-server into standard OpenAI-compatible messages (`{role, content, tool_calls}`) to keep core curate/skill routines functioning.
-* [hermes_tools_mcp_server.py](file:///home/castincar/hermes-agent/agent/transports/hermes_tools_mcp_server.py): Defines a stateless Model Context Protocol (MCP) server that exposes a curated subset of Hermes tools (e.g. search, browser, vision, kanban worker commands) back to the Codex child process.
+* `__init__.py`: Transport registry. Holds the `_REGISTRY` dict and exposes `register_transport(api_mode, cls)`, `get_transport(api_mode)`, and re-exports the `types` helpers (`NormalizedResponse`, `ToolCall`, `Usage`, `build_tool_call`, `map_finish_reason`). `get_transport` lazily imports all transport modules once (`_discover_transports`) so they auto-register; returns `None` for an unknown api_mode (lets call sites fall back to legacy code paths), re-running discovery on a miss to tolerate partial/order-dependent imports.
+* `base.py`: `ProviderTransport` ABC. Declares the required surface: `api_mode` (property), `convert_messages`, `convert_tools`, `build_kwargs`, `normalize_response`. Provides default no-op implementations of `validate_response` (→ True), `extract_cache_stats` (→ None), and `map_finish_reason` (identity).
+* `types.py`: Shared normalized dataclasses. `ToolCall` (id/name/arguments + `provider_data`, with backward-compat `.function`/`.type`/`.call_id`/`.response_item_id`/`.extra_content` properties), `Usage`, and `NormalizedResponse` (content/tool_calls/finish_reason/reasoning/usage + `provider_data`, with backward-compat accessors for `reasoning_content`, `reasoning_details`, `anthropic_content_blocks`, `codex_reasoning_items`, `codex_message_items`). Protocol-specific state lives in `provider_data` dicts so the shared surface stays minimal. Factory helpers: `build_tool_call()` (auto-JSON-serializes args, collects extras into provider_data) and `map_finish_reason()` (maps via a dict, defaults to `"stop"`).
+* `anthropic.py`: `AnthropicTransport` for `api_mode='anthropic_messages'`. Delegates conversion to `agent/anthropic_adapter.py`. Normalizes content blocks (text/thinking/tool_use), maps `stop_reason`, collects `reasoning_details`, and preserves verbatim ordered content blocks (`anthropic_content_blocks`) only when a turn interleaves signed thinking with tool_use (so replay doesn't invalidate thinking-block signatures). Strips the `mcp_` prefix on OAuth-injected tool names. `validate_response` accepts empty content for `end_turn`/`refusal`; `extract_cache_stats` reads Anthropic cache token counts.
+* `bedrock.py`: `BedrockTransport` for `api_mode='bedrock_converse'`. Delegates to `agent/bedrock_adapter.py`. Converts to the Bedrock Converse API shape and tags kwargs with `__bedrock_converse__`/`__bedrock_region__` sentinels the agent pops before the boto3 call. Normalizes both raw boto3 dicts and already-normalized SimpleNamespace responses.
+* `chat_completions.py`: `ChatCompletionsTransport` for the default `api_mode='chat_completions'` (~16 OpenAI-compatible providers — OpenRouter, Nous, NVIDIA, Qwen, Ollama, DeepSeek, xAI, Kimi, etc.). Messages/tools are near-identity; `convert_messages` strips wire-incompatible fields (Codex items, `tool_name`, `_`-prefixed scaffolding markers, and Gemini `extra_content` unless the target model is Gemini-family). `build_kwargs` has two paths: a `ProviderProfile`-driven path (`_build_kwargs_from_profile`, used for all known providers) and a legacy flag path for unregistered providers. Handles reasoning effort, temperature, `extra_body` assembly, and Gemini `thinking_config` translation. Module helpers: `_build_gemini_thinking_config`, `_snake_case_gemini_thinking_config`, `_is_gemini_openai_compat_base_url`, `_model_consumes_thought_signature`. `normalize_response` preserves Gemini `extra_content`, `reasoning`/`reasoning_content`, `reasoning_details`, and OpenAI structured refusals.
+* `codex.py`: `ResponsesApiTransport` for `api_mode='codex_responses'`. Delegates to `agent/codex_responses_adapter.py`. Adapts chat flow to the OpenAI Responses API (xAI/Grok, chatgpt.com/backend-api/codex, GitHub/Copilot backends), managing cross-turn encrypted reasoning replay, issuer-kind stamping (so foreign-issuer reasoning blocks are dropped on model swaps), `prompt_cache_key`/xAI cache routing, and backend-specific kwarg quirks. Adds `preflight_kwargs()` to sanitize/validate kwargs before the call.
+* `codex_app_server.py`: `CodexAppServerClient` — the wire-level speaker for `codex app-server` (codex 0.125+). Newline-delimited JSON-RPC 2.0 over stdio: spawns the subprocess, runs the `initialize` handshake, drives requests, and routes replies/notifications/server-requests to bounded queues via background reader threads (synchronous, not async). Also defines `CodexAppServerError`, and module functions `parse_codex_version()` and `check_codex_binary()` (version-gate helpers used by setup/startup). Adds Kanban writable-root sandbox args when `HERMES_KANBAN_TASK` is set.
+* `codex_app_server_session.py`: `CodexAppServerSession` — one Codex thread per Hermes session. Drives `thread/start`/`turn/start`, polls notifications, projects them via `CodexEventProjector`, bridges server-initiated approval requests (exec / fileChange / permissions / MCP elicitation) to Hermes' approval flow, handles interrupts (`turn/interrupt`), captures token usage (`thread/tokenUsage/updated`), and returns a `TurnResult`. Includes resilience logic: turn-timeout + post-tool quiet watchdog, dead-subprocess detection, `<turn_aborted>` marker handling, OAuth-failure classification (→ `codex login` hint), and `should_retire` signaling so wedged sessions respawn. Maps Hermes terminal security mode → Codex permission profile.
+* `codex_event_projector.py`: `CodexEventProjector` + `ProjectionResult`. Translates Codex `item/*` notifications into standard OpenAI-shaped `{role, content, tool_calls, tool_call_id}` messages so `agent/curator.py` (memory/skill review) keeps working. Materializes messages only on `item/completed`; maps agentMessage/userMessage/reasoning/commandExecution/fileChange/mcpToolCall/dynamicToolCall (and opaque fallbacks), tracking a `tool_iterations` counter for the skill-nudge gate. `_deterministic_call_id()` keeps tool_call ids stable across replay for prefix-cache validity.
+* `hermes_tools_mcp_server.py`: A stateless FastMCP server (`python -m agent.transports.hermes_tools_mcp_server`) that exposes a curated subset of Hermes tools (web search/extract, browser automation, vision, image generation, skills, TTS, and Kanban worker/orchestrator commands) back to the Codex subprocess. Pulls authoritative tool schemas from `model_tools.get_tool_definitions()` and dispatches via `handle_function_call()`. Deliberately omits codex-native tools (shell/file/patch) and `_AGENT_LOOP_TOOLS` (delegate_task/memory/session_search/todo) that need live AIAgent state.
 
 ## Workflow
 
@@ -25,19 +27,21 @@ In addition to API translation, this directory hosts the Codex App-Server runtim
 sequenceDiagram
     autonumber
     participant Agent as AIAgent Loop
-    participant Reg as Transport Registry
+    participant Reg as Transport Registry (__init__)
     participant Trans as ProviderTransport
     participant Provider as Remote LLM Provider
 
     Agent->>Reg: get_transport(api_mode)
-    Reg-->>Agent: return TransportInstance
+    Reg->>Reg: _discover_transports() (lazy, once)
+    Reg-->>Agent: TransportInstance (or None → legacy fallback)
     Agent->>Trans: build_kwargs(model, messages, tools, **params)
     Trans->>Trans: convert_messages() & convert_tools()
-    Trans-->>Agent: return api_kwargs
-    Agent->>Provider: execute API request (using client)
-    Provider-->>Agent: return raw_response
+    Trans-->>Agent: api_kwargs
+    Agent->>Provider: execute request (agent owns the client)
+    Provider-->>Agent: raw_response
+    Agent->>Trans: validate_response(raw_response)
     Agent->>Trans: normalize_response(raw_response)
-    Trans-->>Agent: return NormalizedResponse
+    Trans-->>Agent: NormalizedResponse
 ```
 
 ### Codex App-Server Session Execution Flow
@@ -52,70 +56,70 @@ sequenceDiagram
     participant MCP as hermes_tools_mcp_server
 
     Agent->>Session: ensure_started()
-    Session->>Client: spawn & initialize
-    Client->>Sub: JSON-RPC over stdin (initialize)
-    Sub-->>Client: InitializeResponse
-    Session->>Client: thread/start
+    Session->>Client: spawn + initialize handshake
+    Client->>Sub: JSON-RPC initialize / initialized
+    Session->>Client: thread/start (cwd)
     Client->>Sub: thread/start
     Sub-->>Client: threadId
 
     Agent->>Session: run_turn(user_input)
     Session->>Client: turn/start
     Client->>Sub: turn/start
-    
-    loop Turn Loop
-        Sub-->>Client: item/started / item/completed (tool use / output delta)
+
+    loop until turn/completed (timeout + watchdog guarded)
+        Sub-->>Client: item/* notifications + thread/tokenUsage/updated
         Session->>Client: take_notification()
-        Client-->>Session: notification
         Session->>Proj: project(notification)
-        Proj-->>Session: ProjectionResult (Hermes formatted messages)
-        
-        opt Subprocess calls MCP tool
-            Sub->>MCP: Call tool via MCP stdio
-            MCP->>MCP: Dispatch tool logic
-            MCP-->>Sub: Return tool execution output
+        Proj-->>Session: ProjectionResult (Hermes messages)
+
+        opt Subprocess uses an MCP tool
+            Sub->>MCP: call tool over MCP stdio
+            MCP->>MCP: handle_function_call()
+            MCP-->>Sub: tool output
         end
 
         opt Subprocess requests approval
-            Sub-->>Client: requestApproval (command exec / patch file)
+            Sub-->>Client: item/{commandExecution,fileChange,permissions}/requestApproval
             Session->>Client: take_server_request()
-            Client-->>Session: requestApproval event
-            Session->>Session: Prompt user or auto-resolve
+            Session->>Session: approval_callback / auto-resolve → decision
             Session->>Client: respond(rid, decision)
-            Client->>Sub: JSON-RPC (accept/decline)
+            Client->>Sub: accept / acceptForSession / decline
         end
     end
     Sub-->>Client: turn/completed
+    Session-->>Agent: TurnResult (final_text, projected_messages, usage, should_retire)
 ```
 
 ## System Architecture
 
 ```
                       +-----------------------------+
-                      |    AIAgent (run_agent.py)   |
-                      +--------------+--------------+
+                      |     AIAgent (run_agent.py)   |
+                      +--------------+---------------+
                                      |
-             +-----------------------+-----------------------+
-             |                                               |
-             v                                               v
-     [ get_transport ]                            [ CodexAppServerSession ]
-             |                                               |
-             v                                               v
-     +---------------+                            +-----------------------+
-     |   _REGISTRY   |                            |  CodexAppServerClient |
-     +-------+-------+                            +-----------+-----------+
-             |                                                | (JSON-RPC stdio)
-     +-------+-------------------------+                      v
-     |       |         |               |           +----------------------+
-     v       v         v               v           |  codex app-server    |
- [Anthropic][Bedrock][ChatCompletions][Codex]      |      subprocess      |
-                                                   +----+------------+----+
-                                                        |            |
-                                      (Event Project)   v            v (MCP tool call)
-                                            +-----------+-------+  +-+-------------------+
-                                            |CodexEventProjector|  |hermes_tools_mcp_... |
-                                            +-----------+-------+  +---------+-----------+
-                                                        |                    |
-                                                        v                    v
-                                                [Hermes Messages]    [Hermes Core Tools]
+             +-----------------------+------------------------+
+             |                                                |
+             v                                                v
+     [ get_transport ]  (__init__.py)            [ CodexAppServerSession ]
+             |                                                |
+             v                                                v
+     +---------------+                            +------------------------+
+     |   _REGISTRY   |  ProviderTransport (base)  |  CodexAppServerClient  |
+     +-------+-------+                            +-----------+------------+
+             |                                                | JSON-RPC stdio
+     +-------+--------+--------------+                         v
+     |       |        |             |              +----------------------+
+     v       v        v             v              |   codex app-server   |
+[Anthropic][Bedrock][ChatComplet.][Codex]         |      subprocess      |
+     |       |        |             |              +----+-------------+---+
+     v       v        v             v                   |             |
+ (anthropic (bedrock (providers/  (codex_responses      | events      | MCP tool call
+  _adapter) _adapter) profiles)    _adapter)            v             v
+                                              +---------+--------+  +-+------------------+
+        all → NormalizedResponse (types.py)   |CodexEventProjector|  |hermes_tools_mcp_   |
+                                              +---------+--------+  |server (FastMCP)    |
+                                                        |          +---------+----------+
+                                                        v                    |
+                                              [Hermes messages]   handle_function_call()
+                                                                  → [Hermes core tools]
 ```

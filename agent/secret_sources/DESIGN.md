@@ -4,10 +4,15 @@
 The `agent/secret_sources` directory manages the integration of external secret sources to securely supply environment-variable-shaped credentials at process startup. By retrieving secrets dynamically, Hermes avoids the need to store sensitive keys (e.g., LLM provider API keys) in plaintext in the user's `~/.hermes/.env` file. These integrations run non-destructively: they only populate environment variables that are not already defined, ensuring that local shell exports and `.env` file settings retain precedence.
 
 ## File Enumeration
-* [__init__.py](file:///home/castincar/hermes-agent/agent/secret_sources/__init__.py)
-  Provides the module level documentation for the external secret sources package.
-* [bitwarden.py](file:///home/castincar/hermes-agent/agent/secret_sources/bitwarden.py)
-  Implements the integration with Bitwarden Secrets Manager (using the `bws` CLI). It handles automatic download and verification of the pinned `bws` binary, invoking the CLI as a subprocess to list secrets for a specific project, and caching the fetched credentials across processes using a two-layer cache (in-memory and a secure local JSON file).
+* [`__init__.py`](./__init__.py)
+  Package docstring only. Defines what a "secret source" is (an env-var-shaped credential supplier that runs after `~/.hermes/.env` loads and is non-destructive by default) and points at the one shipped source (`bitwarden`) and its CLI wizard (`hermes_cli.secrets_cli`).
+* [`bitwarden.py`](./bitwarden.py)
+  Bitwarden Secrets Manager integration via the `bws` CLI. Responsibilities:
+  - **Binary management** — `find_bws()` resolves the managed copy (`<hermes_home>/bin/bws`) first, then system PATH; `install_bws()` downloads the pinned version (`_BWS_VERSION = 2.0.0`) for the current platform/arch/libc from GitHub Releases, verifies its SHA-256 against the published checksum file, guards against zip-slip (`_safe_extract_member`), and installs it atomically.
+  - **Fetch** — `fetch_bitwarden_secrets()` runs `bws secret list <project_id> --output json` as a subprocess (`BWS_ACCESS_TOKEN`, optional `BWS_SERVER_URL` for region/self-host), parses the JSON list, and keeps only valid env-var names.
+  - **Two-layer cache** — an in-process dict (`_CACHE`) and a disk-persisted JSON file (`<hermes_home>/cache/bws_cache.json`, mode 0600, secret values only, never the token), both sharing one TTL.
+  - **Apply** — `apply_bitwarden_secrets()` is the env_loader entry point; it injects fetched keys into `os.environ` non-destructively (won't override existing vars unless `override_existing`, never clobbers the access-token env var) and never raises — failures come back as a `FetchResult` with `error` set.
+  - **Test hook** — `_reset_cache_for_tests()` clears both cache layers.
 
 ## Workflow
 The sequence diagram below shows how credentials are loaded and cached from Bitwarden Secrets Manager during process startup.
@@ -22,19 +27,21 @@ sequenceDiagram
 
     EL->>BW: apply_bitwarden_secrets(...)
     activate BW
-    BW->>C: Read cache (is_fresh?)
+    Note over BW: read BWS_ACCESS_TOKEN + project_id;<br/>find_bws(install_if_missing)
+    BW->>C: L1 in-process, then L2 disk (is_fresh?)
     alt Cache Hit (fresh)
-        C-->>BW: Return cached secrets
+        C-->>BW: Return cached secrets (promote L2->L1)
     else Cache Miss (stale or missing)
-        BW->>BW: Find / install bws binary (find_bws)
-        BW->>BWS: Invoke "bws secret list <project_id> --output json"
+        BW->>BWS: bws secret list <project_id> --output json
         activate BWS
         BWS-->>BW: JSON secrets output
         deactivate BWS
-        BW->>C: Write to in-memory and disk cache
+        BW->>C: Write L1 + L2 (0600, values only)
     end
-    BW->>ENV: Inject fetched keys (os.environ)
-    BW-->>EL: Return FetchResult (applied, skipped, warnings, error)
+    loop each fetched key
+        BW->>ENV: set if absent (skip token env / existing unless override)
+    end
+    BW-->>EL: FetchResult (applied, skipped, warnings, error)
     deactivate BW
 ```
 
@@ -57,10 +64,12 @@ The relationships between the secrets module, CLI command layers, local storage,
 |            |                    |                            |                    |
 |            | (downloads binary) | (invokes)                  | (reads/writes)     |
 |            v                    v                            v                    |
-|    +---------------+    +---------------+            +---------------+            |
-|    | GitHub        |    | bws binary    |            | bws_cache.json|            |
-|    | Releases      |    | (Subprocess)  |            | (Disk Cache)  |            |
-|    +---------------+    +-------+-------+            +---------------+            |
+|    +---------------+    +---------------+      +----------------------------+     |
+|    | GitHub        |    | bws binary    |      | Cache (two layers, 1 TTL): |     |
+|    | Releases      |    | (Subprocess)  |      |  L1 _CACHE (in-process)    |     |
+|    | (zip + sha256)|    +-------+-------+      |  L2 cache/bws_cache.json   |     |
+|    +---------------+            |             |     (disk, 0600)           |     |
+|                                 |             +----------------------------+     |
 |                                 |                                                 |
 |                                 | (HTTP API)                                      |
 |                                 v                                                 |
