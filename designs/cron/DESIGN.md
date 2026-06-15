@@ -10,7 +10,7 @@ The `cron` directory manages the scheduled execution of automated agent tasks an
 - [suggestions.py](file:///home/castincar/hermes-agent/cron/suggestions.py): Manages proposed automations proposed to the user, stored in `~/.hermes/cron/suggestions.json`. Provides interfaces to load, add, dismiss, or accept suggestions. Upon acceptance, delegates to `cron.jobs.create_job`.
 - [suggestion_catalog.py](file:///home/castincar/hermes-agent/cron/suggestion_catalog.py): Defines curated built-in starter suggestions (e.g., daily briefing, important-mail monitor, weekly review) that can be seeded into the suggestions file.
 - [blueprint_catalog.py](file:///home/castincar/hermes-agent/cron/blueprint_catalog.py): Catalog of parameterized automation templates ("blueprints") with typed inputs ("slots"). Validates slot values and maps them to standard job specifications, forms, deep links, and slash commands.
-- [scripts/DESIGN.md](file:///home/castincar/hermes-agent/cron/scripts/DESIGN.md): Design documentation for the child scripts directory.
+- [scripts/DESIGN.md](file:///home/castincar/hermes-agent/designs/cron/scripts/DESIGN.md): Design documentation for the child scripts directory.
 - [scripts/__init__.py](file:///home/castincar/hermes-agent/cron/scripts/__init__.py): Module namespace initializer for scripts.
 - [scripts/classify_items.py](file:///home/castincar/hermes-agent/cron/scripts/classify_items.py): A CLI monitoring script implementing the urgency-monitor pattern, filtering candidate JSON items based on LLM-rated urgency.
 

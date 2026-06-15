@@ -100,8 +100,8 @@ Main tasks performed by this module:
 * [yuanbao_tools.py](file:///home/castincar/hermes-agent/tools/yuanbao_tools.py): Queries Tencent Yuanbao search services.
 
 ### Subdirectories
-* [environments/](file:///home/castincar/hermes-agent/tools/environments/DESIGN.md): Sandbox command execution layer (Local, Docker, SSH, Daytona, Modal, Apptainer).
-* [computer_use/](file:///home/castincar/hermes-agent/tools/computer_use/DESIGN.md): Background macOS desktop UI control.
+* [environments/](file:///home/castincar/hermes-agent/designs/tools/environments/DESIGN.md): Sandbox command execution layer (Local, Docker, SSH, Daytona, Modal, Apptainer).
+* [computer_use/](file:///home/castincar/hermes-agent/designs/tools/computer_use/DESIGN.md): Background macOS desktop UI control.
 
 ## Workflow
 The runtime flow within the `tools` directory when an agent invokes a capability is illustrated below:

@@ -43,9 +43,9 @@ The main responsibilities of the files in this directory include:
 - [whatsapp_identity.py](file:///home/castincar/hermes-agent/gateway/whatsapp_identity.py): Standardizes and expands WhatsApp sender identities by resolving LID and phone number mappings.
 
 ### Subdirectories
-- [platforms/](file:///home/castincar/hermes-agent/gateway/platforms/DESIGN.md): The messaging platform adapter library containing target integrations (Telegram, Slack, Discord, Matrix, etc.).
-- [platforms/qqbot/](file:///home/castincar/hermes-agent/gateway/platforms/qqbot/DESIGN.md): Specific integration details for the Tencent QQ Bot API (v2) adapter.
-- [builtin_hooks/](file:///home/castincar/hermes-agent/gateway/builtin_hooks/DESIGN.md): Extension point for always-active, built-in gateway event hooks.
+- [platforms/](file:///home/castincar/hermes-agent/designs/gateway/platforms/DESIGN.md): The messaging platform adapter library containing target integrations (Telegram, Slack, Discord, Matrix, etc.).
+- [platforms/qqbot/](file:///home/castincar/hermes-agent/designs/gateway/platforms/qqbot/DESIGN.md): Specific integration details for the Tencent QQ Bot API (v2) adapter.
+- [builtin_hooks/](file:///home/castincar/hermes-agent/designs/gateway/builtin_hooks/DESIGN.md): Extension point for always-active, built-in gateway event hooks.
 
 ---
 

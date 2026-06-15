@@ -16,9 +16,9 @@ The main tasks performed by this subsystem include:
 ## File Enumeration
 
 ### Subdirectories (with existing Design Documents)
-*   [lsp](file:///home/castincar/hermes-agent/agent/lsp/DESIGN.md): Language Server Protocol (LSP) integration. Provides workspace-aware diagnostics, automatic server bootstrapping, differential diagnostic filtering (delta matching), and remapping of line numbers on modified code files.
-*   [secret_sources](file:///home/castincar/hermes-agent/agent/secret_sources/DESIGN.md): Integrates external secret sources (like Bitwarden Secrets Manager) to securely fetch API keys at startup, bypassing the need for plaintext `.env` storage.
-*   [transports](file:///home/castincar/hermes-agent/agent/transports/DESIGN.md): Standardized communication interface abstracting provider-specific schemas. Handles translation, token-counting, and houses the Codex App-Server JSON-RPC execution session and MCP bridge.
+*   [lsp](file:///home/castincar/hermes-agent/designs/agent/lsp/DESIGN.md): Language Server Protocol (LSP) integration. Provides workspace-aware diagnostics, automatic server bootstrapping, differential diagnostic filtering (delta matching), and remapping of line numbers on modified code files.
+*   [secret_sources](file:///home/castincar/hermes-agent/designs/agent/secret_sources/DESIGN.md): Integrates external secret sources (like Bitwarden Secrets Manager) to securely fetch API keys at startup, bypassing the need for plaintext `.env` storage.
+*   [transports](file:///home/castincar/hermes-agent/designs/agent/transports/DESIGN.md): Standardized communication interface abstracting provider-specific schemas. Handles translation, token-counting, and houses the Codex App-Server JSON-RPC execution session and MCP bridge.
 
 ### Python Modules
 *   [__init__.py](file:///home/castincar/hermes-agent/agent/__init__.py): Exposes package entry points and triggers module-level preloads.

@@ -15,14 +15,14 @@ The primary tasks of this subsystem include:
 ## File Enumeration
 
 ### Subdirectories (with existing Design Documents)
-*   [agent/DESIGN.md](file:///home/castincar/hermes-agent/agent/DESIGN.md): The core intelligence and request/response execution engine. Coordinates adapters (Anthropic, Gemini, Bedrock), context summary compaction, rate-limiting pools, and local LSP diagnostics.
-*   [tools/DESIGN.md](file:///home/castincar/hermes-agent/tools/DESIGN.md): The capability and extension layer of the agent. Enforces path validation, manages user consent diffs, handles MCP clients, and directs sandbox environments.
-*   [hermes_cli/DESIGN.md](file:///home/castincar/hermes-agent/hermes_cli/DESIGN.md): Argparse parser hierarchies, profile isolation directories, setup wizards, local HTTP client proxies, and dashboard authentication.
-*   [gateway/DESIGN.md](file:///home/castincar/hermes-agent/gateway/DESIGN.md): Messaging bridge linking the agent core to platforms like Telegram, Discord, Slack, Matrix, and custom webhooks.
-*   [cron/DESIGN.md](file:///home/castincar/hermes-agent/cron/DESIGN.md): Timezone-aware scheduled background timers and parameter-slotted suggestion blueprints.
-*   [acp_adapter/DESIGN.md](file:///home/castincar/hermes-agent/acp_adapter/DESIGN.md): Stdio JSON-RPC server mapping agent capabilities to editor environments like Zed.
-*   [tui_gateway/DESIGN.md](file:///home/castincar/hermes-agent/tui_gateway/DESIGN.md): Bidirectional Websocket/stdio RPC controller that powers Ink terminal interfaces and dashboard consoles.
-*   [apps/desktop/DESIGN.md](file:///home/castincar/hermes-agent/apps/desktop/DESIGN.md): Design guidelines, primitive components styling, and multi-locale string definitions for the Electron application.
+*   [agent/DESIGN.md](file:///home/castincar/hermes-agent/designs/agent/DESIGN.md): The core intelligence and request/response execution engine. Coordinates adapters (Anthropic, Gemini, Bedrock), context summary compaction, rate-limiting pools, and local LSP diagnostics.
+*   [tools/DESIGN.md](file:///home/castincar/hermes-agent/designs/tools/DESIGN.md): The capability and extension layer of the agent. Enforces path validation, manages user consent diffs, handles MCP clients, and directs sandbox environments.
+*   [hermes_cli/DESIGN.md](file:///home/castincar/hermes-agent/designs/hermes_cli/DESIGN.md): Argparse parser hierarchies, profile isolation directories, setup wizards, local HTTP client proxies, and dashboard authentication.
+*   [gateway/DESIGN.md](file:///home/castincar/hermes-agent/designs/gateway/DESIGN.md): Messaging bridge linking the agent core to platforms like Telegram, Discord, Slack, Matrix, and custom webhooks.
+*   [cron/DESIGN.md](file:///home/castincar/hermes-agent/designs/cron/DESIGN.md): Timezone-aware scheduled background timers and parameter-slotted suggestion blueprints.
+*   [acp_adapter/DESIGN.md](file:///home/castincar/hermes-agent/designs/acp_adapter/DESIGN.md): Stdio JSON-RPC server mapping agent capabilities to editor environments like Zed.
+*   [tui_gateway/DESIGN.md](file:///home/castincar/hermes-agent/designs/tui_gateway/DESIGN.md): Bidirectional Websocket/stdio RPC controller that powers Ink terminal interfaces and dashboard consoles.
+*   [apps/desktop/DESIGN.md](file:///home/castincar/hermes-agent/designs/apps/desktop/DESIGN.md): Design guidelines, primitive components styling, and multi-locale string definitions for the Electron application.
 
 ### Python Modules & Shell Scripts
 *   [run_agent.py](file:///home/castincar/hermes-agent/run_agent.py): The main conversation loop class (`AIAgent`). Controls prompt builder triggers, model completion calls, budget iteration limits, tool execution routing, and cost updates.
