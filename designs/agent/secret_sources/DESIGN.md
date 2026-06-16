@@ -4,9 +4,9 @@
 The `agent/secret_sources` directory manages the integration of external secret sources to securely supply environment-variable-shaped credentials at process startup. By retrieving secrets dynamically, Hermes avoids the need to store sensitive keys (e.g., LLM provider API keys) in plaintext in the user's `~/.hermes/.env` file. These integrations run non-destructively: they only populate environment variables that are not already defined, ensuring that local shell exports and `.env` file settings retain precedence.
 
 ## File Enumeration
-* [`__init__.py`](./__init__.py)
+* [`__init__.py`](../../../agent/secret_sources/__init__.py)
   Package docstring only. Defines what a "secret source" is (an env-var-shaped credential supplier that runs after `~/.hermes/.env` loads and is non-destructive by default) and points at the one shipped source (`bitwarden`) and its CLI wizard (`hermes_cli.secrets_cli`).
-* [`bitwarden.py`](./bitwarden.py)
+* [`bitwarden.py`](../../../agent/secret_sources/bitwarden.py)
   Bitwarden Secrets Manager integration via the `bws` CLI. Responsibilities:
   - **Binary management** — `find_bws()` resolves the managed copy (`<hermes_home>/bin/bws`) first, then system PATH; `install_bws()` downloads the pinned version (`_BWS_VERSION = 2.0.0`) for the current platform/arch/libc from GitHub Releases, verifies its SHA-256 against the published checksum file, guards against zip-slip (`_safe_extract_member`), and installs it atomically.
   - **Fetch** — `fetch_bitwarden_secrets()` runs `bws secret list <project_id> --output json` as a subprocess (`BWS_ACCESS_TOKEN`, optional `BWS_SERVER_URL` for region/self-host), parses the JSON list, and keeps only valid env-var names.
